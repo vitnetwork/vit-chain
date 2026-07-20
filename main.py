@@ -1,5 +1,5 @@
 """
-VIT Chain Node — main.py
+VIT Chain Node â main.py
 Standalone FastAPI service for VIT Chain (Chain ID 7764).
 Proof-of-Storage consensus, JSON-RPC 2.0, P2P gossip.
 """
@@ -13,11 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from chain.config import settings
 from chain.database import init_db, AsyncSessionLocal
-from chain.genesis import ensure_genesis
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s â %(message)s",
 )
 logger = logging.getLogger("vit-chain")
 
@@ -25,11 +24,11 @@ logger = logging.getLogger("vit-chain")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(
-        "VIT Chain Node %s starting — network: %s, chain_id: %d",
+        "VIT Chain Node %s starting â network: %s, chain_id: %d",
         settings.NODE_VERSION, settings.NETWORK, settings.CHAIN_ID,
     )
 
-    # ── 1. Initialise DB schema ──────────────────────────────────────────────
+    # ââ 1. Initialise DB schema ââââââââââââââââââââââââââââââââââââââââââââââ
     # Wrapped so the service boots in DEGRADED mode even if the DB is
     # temporarily unavailable. /ping always responds; /health reports state.
     try:
@@ -38,24 +37,25 @@ async def lifespan(app: FastAPI):
         app.state.db_ready = True
     except Exception as exc:
         logger.error(
-            "Database init failed — node starting in DEGRADED mode: %s", exc
+            "Database init failed â node starting in DEGRADED mode: %s", exc
         )
         app.state.db_ready = False
 
-    # ── 2. Seed genesis block (idempotent) ───────────────────────────────────
+    # ââ 2. Seed genesis block (idempotent) âââââââââââââââââââââââââââââââââââ
     if getattr(app.state, "db_ready", False):
         try:
+            from chain.genesis import ensure_genesis  # lazy — avoids import-time crypto crash
             async with AsyncSessionLocal() as db:
                 genesis = await ensure_genesis(db)
                 await db.commit()
                 logger.info(
-                    "Genesis verified: height=%d hash=%s…",
+                    "Genesis verified: height=%d hash=%sâ¦",
                     genesis.height, genesis.block_hash[:16],
                 )
         except Exception as exc:
-            logger.error("Genesis seeding failed — chain may be empty: %s", exc)
+            logger.error("Genesis seeding failed â chain may be empty: %s", exc)
 
-    # ── 3. Consensus epoch scheduler ─────────────────────────────────────────
+    # ââ 3. Consensus epoch scheduler âââââââââââââââââââââââââââââââââââââââââ
     app.state.consensus_task = None
     try:
         from chain.consensus.scheduler import EpochScheduler
@@ -69,12 +69,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error("Consensus scheduler failed to start: %s", exc)
 
-    logger.info("VIT Chain Node OPERATIONAL — RPC at POST /rpc")
+    logger.info("VIT Chain Node OPERATIONAL â RPC at POST /rpc")
 
     yield
 
-    # ── Shutdown ─────────────────────────────────────────────────────────────
-    logger.info("Shutting down VIT Chain Node…")
+    # ââ Shutdown âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    logger.info("Shutting down VIT Chain Nodeâ¦")
     task = getattr(app.state, "consensus_task", None)
     if task and not task.done():
         task.cancel()
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="VIT Chain Node",
     description=(
-        f"VIT Network — Chain ID {settings.CHAIN_ID} ({settings.NETWORK}). "
+        f"VIT Network â Chain ID {settings.CHAIN_ID} ({settings.NETWORK}). "
         "Proof-of-Storage consensus. JSON-RPC 2.0 compatible."
     ),
     version=settings.NODE_VERSION,
@@ -105,7 +105,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers ──────────────────────────────────────────────────────────────────
+# ââ Routers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 try:
     from chain.rpc.router import router as rpc_router
     app.include_router(rpc_router)
@@ -155,10 +155,10 @@ except Exception as _e:
     logger.error("Failed to load registry router: %s", _e)
 
 
-# ── Core endpoints ────────────────────────────────────────────────────────────
+# ââ Core endpoints ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.get("/ping", tags=["Health"])
 async def ping():
-    """Liveness probe — always 200, no DB dependency."""
+    """Liveness probe â always 200, no DB dependency."""
     return {
         "status": "ok",
         "chain_id": settings.CHAIN_ID,
@@ -169,7 +169,7 @@ async def ping():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    """Deep readiness check — reports DB connectivity and chain state."""
+    """Deep readiness check â reports DB connectivity and chain state."""
     from sqlalchemy import text
     db_ok = False
     height = 0
