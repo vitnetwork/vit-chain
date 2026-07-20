@@ -148,6 +148,12 @@ try:
 except Exception as _e:
     logger.error("Failed to load peers router: %s", _e)
 
+try:
+    from api.registry import router as registry_router
+    app.include_router(registry_router)
+except Exception as _e:
+    logger.error("Failed to load registry router: %s", _e)
+
 
 # ── Core endpoints ────────────────────────────────────────────────────────────
 @app.get("/ping", tags=["Health"])
