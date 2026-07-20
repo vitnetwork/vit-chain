@@ -5,7 +5,9 @@ services:
     repo: https://github.com/vitnetwork/vit-chain
     branch: main
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
+    # /ping always returns 200 instantly — no DB dependency.
+    # /health is the deep check (reports DB + consensus state).
+    healthCheckPath: /ping
     autoDeploy: true
     region: oregon
     plan: free
@@ -14,23 +16,21 @@ services:
         value: testnet
       - key: CHAIN_ID
         value: "7764"
-      - key: DATABASE_URL
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: VIT_VALIDATOR_KEY
-        sync: false
-      - key: GENESIS_TREASURY_KEY
-        sync: false
-      - key: GENESIS_VALIDATORS
-        sync: false
-      - key: GENESIS_PROPOSER_ADDRESS
-        sync: false
+      - key: EPOCH_SECONDS
+        value: "15"
       - key: SLASHING_DOWNTIME_SLOTS
         value: "50"
       - key: SLASHING_APPEAL_WINDOW_SLOTS
-        value: "100"
+        value: "500"
+      - key: LOG_LEVEL
+        value: INFO
       - key: VIT_STORAGE_URL
         value: https://vit-storage-4trt.onrender.com
       - key: VIT_AI_URL
         value: https://vit-ai.onrender.com
+      # P2P disabled on Render Free — saves RAM; enable when upgrading plan.
+      - key: P2P_ENABLED
+        value: "false"
+      # Secrets below are injected via the `vitnetwork` env group:
+      # DATABASE_URL, VIT_VALIDATOR_KEY, GENESIS_TREASURY_KEY,
+      # REDIS_URL, GENESIS_VALIDATORS, GENESIS_PROPOSER_ADDRESS
