@@ -1,197 +1,190 @@
 """
-VIT Chain Node â main.py
-Standalone FastAPI service for VIT Chain (Chain ID 7764).
-Proof-of-Storage consensus, JSON-RPC 2.0, P2P gossip.
-"""
-import asyncio
-import logging
-import os
-from contextlib import asynccontextmanager
+    VIT Chain Node — main.py
+    Standalone FastAPI service for VIT Chain (Chain ID 7764).
+    Proof-of-Storage consensus, JSON-RPC 2.0, P2P gossip.
+    """
+    import asyncio
+    import logging
+    import os
+    import traceback as _tb
+    from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
 
-from chain.config import settings
-from chain.database import init_db, AsyncSessionLocal
+    from chain.config import settings
+    from chain.database import init_db, AsyncSessionLocal
 
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s â %(message)s",
-)
-logger = logging.getLogger("vit-chain")
+    logging.basicConfig(
+      level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
+      format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    )
+    logger = logging.getLogger("vit-chain")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info(
-        "VIT Chain Node %s starting â network: %s, chain_id: %d",
-        settings.NODE_VERSION, settings.NETWORK, settings.CHAIN_ID,
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+      logger.info(
+          "VIT Chain Node %s starting — network: %s, chain_id: %d",
+          settings.NODE_VERSION, settings.NETWORK, settings.CHAIN_ID,
+      )
+
+      # ── 1. Initialise DB schema ──────────────────────────────────────────────────────
+      try:
+          await init_db()
+          logger.info("Database schema ready.")
+          app.state.db_ready = True
+      except Exception as exc:
+          logger.error(
+              "Database init failed — node starting in DEGRADED mode: %s", exc
+          )
+          app.state.db_ready = False
+
+      # ── 2. Seed genesis block (idempotent) ─────────────────────────────────────────────
+      if getattr(app.state, "db_ready", False):
+          try:
+              from chain.genesis import ensure_genesis  # lazy — avoids import-time crypto crash
+              async with AsyncSessionLocal() as db:
+                  genesis = await ensure_genesis(db)
+                  await db.commit()
+                  logger.info(
+                      "Genesis verified: height=%d hash=%s…",
+                      genesis.height, genesis.block_hash[:16],
+                  )
+          except Exception as exc:
+              logger.error("Genesis seeding failed — chain may be empty: %s", exc)
+
+      # ── 3. Consensus epoch scheduler ───────────────────────────────────────────────────
+      app.state.consensus_task = None
+      try:
+          from chain.consensus.scheduler import EpochScheduler
+          scheduler = EpochScheduler()
+          consensus_task = asyncio.create_task(
+              scheduler.run(), name="consensus-scheduler"
+          )
+          app.state.scheduler = scheduler
+          app.state.consensus_task = consensus_task
+          logger.info("Consensus scheduler started (epoch=%ds).", settings.EPOCH_SECONDS)
+      except Exception as exc:
+          logger.error("Consensus scheduler failed to start: %s", exc)
+
+      logger.info("VIT Chain Node OPERATIONAL — RPC at POST /rpc")
+
+      yield
+
+      # ── Shutdown ───────────────────────────────────────────────────────────────────────────────
+      logger.info("Shutting down VIT Chain Node…")
+      task = getattr(app.state, "consensus_task", None)
+      if task and not task.done():
+          task.cancel()
+          try:
+              await task
+          except asyncio.CancelledError:
+              pass
+      logger.info("VIT Chain Node stopped.")
+
+
+    app = FastAPI(
+      title="VIT Chain Node",
+      description=(
+          f"VIT Network — Chain ID {settings.CHAIN_ID} ({settings.NETWORK}). "
+          "Proof-of-Storage consensus. JSON-RPC 2.0 compatible."
+      ),
+      version=settings.NODE_VERSION,
+      lifespan=lifespan,
+      docs_url="/docs",
+      redoc_url="/redoc",
     )
 
-    # ââ 1. Initialise DB schema ââââââââââââââââââââââââââââââââââââââââââââââ
-    # Wrapped so the service boots in DEGRADED mode even if the DB is
-    # temporarily unavailable. /ping always responds; /health reports state.
+    app.add_middleware(
+      CORSMiddleware,
+      allow_origins=["*"],
+      allow_credentials=True,
+      allow_methods=["*"],
+      allow_headers=["*"],
+    )
+
+    # ── Startup error capture ──────────────────────────────────────────────────────────────
+    _startup_errors: dict = {}
+
+
+    # ── Routers ───────────────────────────────────────────────────────────────────────────────
     try:
-        await init_db()
-        logger.info("Database schema ready.")
-        app.state.db_ready = True
-    except Exception as exc:
-        logger.error(
-            "Database init failed â node starting in DEGRADED mode: %s", exc
-        )
-        app.state.db_ready = False
+      from chain.rpc.router import router as rpc_router
+      app.include_router(rpc_router)
+    except Exception as _e:
+      _startup_errors['rpc_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load RPC router: %s", _e)
 
-    # ââ 2. Seed genesis block (idempotent) âââââââââââââââââââââââââââââââââââ
-    if getattr(app.state, "db_ready", False):
-        try:
-            from chain.genesis import ensure_genesis  # lazy — avoids import-time crypto crash
-            async with AsyncSessionLocal() as db:
-                genesis = await ensure_genesis(db)
-                await db.commit()
-                logger.info(
-                    "Genesis verified: height=%d hash=%sâ¦",
-                    genesis.height, genesis.block_hash[:16],
-                )
-        except Exception as exc:
-            logger.error("Genesis seeding failed â chain may be empty: %s", exc)
-
-    # ââ 3. Consensus epoch scheduler âââââââââââââââââââââââââââââââââââââââââ
-    app.state.consensus_task = None
     try:
-        from chain.consensus.scheduler import EpochScheduler
-        scheduler = EpochScheduler()
-        consensus_task = asyncio.create_task(
-            scheduler.run(), name="consensus-scheduler"
-        )
-        app.state.scheduler = scheduler
-        app.state.consensus_task = consensus_task
-        logger.info("Consensus scheduler started (epoch=%ds).", settings.EPOCH_SECONDS)
-    except Exception as exc:
-        logger.error("Consensus scheduler failed to start: %s", exc)
+      from api.blocks import router as blocks_router
+      app.include_router(blocks_router)
+    except Exception as _e:
+      _startup_errors['blocks_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load blocks router: %s", _e)
 
-    logger.info("VIT Chain Node OPERATIONAL â RPC at POST /rpc")
+    try:
+      from api.transactions import router as txs_router
+      app.include_router(txs_router)
+    except Exception as _e:
+      _startup_errors['txs_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load transactions router: %s", _e)
 
-    yield
+    try:
+      from api.accounts import router as accounts_router
+      app.include_router(accounts_router)
+    except Exception as _e:
+      _startup_errors['accounts_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load accounts router: %s", _e)
 
-    # ââ Shutdown âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    logger.info("Shutting down VIT Chain Nodeâ¦")
-    task = getattr(app.state, "consensus_task", None)
-    if task and not task.done():
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    logger.info("VIT Chain Node stopped.")
+    try:
+      from api.validators import router as validators_router
+      app.include_router(validators_router)
+    except Exception as _e:
+      _startup_errors['validators_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load validators router: %s", _e)
 
+    try:
+      from api.status import router as status_router
+      app.include_router(status_router)
+    except Exception as _e:
+      _startup_errors['status_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load status router: %s", _e)
 
-app = FastAPI(
-    title="VIT Chain Node",
-    description=(
-        f"VIT Network â Chain ID {settings.CHAIN_ID} ({settings.NETWORK}). "
-        "Proof-of-Storage consensus. JSON-RPC 2.0 compatible."
-    ),
-    version=settings.NODE_VERSION,
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
+    try:
+      from api.peers import router as peers_router
+      app.include_router(peers_router)
+    except Exception as _e:
+      _startup_errors['peers_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load peers router: %s", _e)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-import traceback as _tb
-_startup_errors: dict = {}  # router import errors captured at startup
-
-# ââ Routers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-try:
-    from chain.rpc.router import router as rpc_router
-    app.include_router(rpc_router)
-except Exception as _e:
-    _startup_errors['rpc_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load RPC router: %s", _e)
-
-try:
-    from api.blocks import router as blocks_router
-    app.include_router(blocks_router)
-except Exception as _e:
-    _startup_errors['blocks_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load blocks router: %s", _e)
-
-try:
-    from api.transactions import router as txs_router
-    app.include_router(txs_router)
-except Exception as _e:
-    _startup_errors['txs_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load transactions router: %s", _e)
-
-try:
-    from api.accounts import router as accounts_router
-    app.include_router(accounts_router)
-except Exception as _e:
-    _startup_errors['accounts_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load accounts router: %s", _e)
-
-try:
-    from api.validators import router as validators_router
-    app.include_router(validators_router)
-except Exception as _e:
-    _startup_errors['validators_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load validators router: %s", _e)
-
-try:
-    from api.status import router as status_router
-    app.include_router(status_router)
-except Exception as _e:
-    _startup_errors['status_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load status router: %s", _e)
-
-try:
-    from api.peers import router as peers_router
-    app.include_router(peers_router)
-except Exception as _e:
-    _startup_errors['peers_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load peers router: %s", _e)
-
-try:
-    from api.registry import router as registry_router
-    app.include_router(registry_router)
-except Exception as _e:
-    _startup_errors['registry_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
-    logger.error("Failed to load registry router: %s", _e)
+    try:
+      from api.registry import router as registry_router
+      app.include_router(registry_router)
+    except Exception as _e:
+      _startup_errors['registry_router'] = {'error': str(_e), 'type': type(_e).__name__, 'tb': _tb.format_exc()}
+      logger.error("Failed to load registry router: %s", _e)
 
 
-# ââ Core endpoints ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-@app.get("/debug/startup-errors", tags=["Debug"])
+    # ── Core endpoints ─────────────────────────────────────────────────────────────────
+    @app.get("/debug/startup-errors", tags=["Debug"])
     async def debug_startup_errors():
-      """Exposes router import errors captured at startup — for diagnostics only."""
+      """Exposes router import errors captured at startup -- diagnostics only."""
       return _startup_errors
 
 
-
-@app.get("/debug/startup-errors", tags=["Debug"])
-async def debug_startup_errors():
-    """Exposes router import errors captured at startup."""
-    return _startup_errors
-
-
-@app.get("/ping", tags=["Health"])
-async def ping():
-"""Liveness probe â always 200, no DB dependency."""
-return {
-    "status": "ok",
-    "chain_id": settings.CHAIN_ID,
-    "network":  settings.NETWORK,
-    "version":  settings.NODE_VERSION,
-}
+    @app.get("/ping", tags=["Health"])
+    async def ping():
+      """Liveness probe -- always 200, no DB dependency."""
+      return {
+          "status": "ok",
+          "chain_id": settings.CHAIN_ID,
+          "network":  settings.NETWORK,
+          "version":  settings.NODE_VERSION,
+      }
 
 
-@app.get("/health", tags=["Health"])
+    @app.get("/health", tags=["Health"])
 async def health():
     """Deep readiness check â reports DB connectivity and chain state."""
     from sqlalchemy import text
@@ -212,12 +205,12 @@ async def health():
     except Exception as exc:
         logger.debug("Health check DB error: %s", exc)
 
-return {
-    "status":            "healthy" if db_ok else "degraded",
-    "network":           settings.NETWORK,
-    "chain_id":          settings.CHAIN_ID,
-    "version":           settings.NODE_VERSION,
+    return {
+        "status":            "healthy" if db_ok else "degraded",
+        "network":           settings.NETWORK,
+        "chain_id":          settings.CHAIN_ID,
+        "version":           settings.NODE_VERSION,
         "db_connected":      db_ok,
         "block_height":      height,
         "active_validators": validator_count,
-}
+    }
