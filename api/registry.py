@@ -7,6 +7,7 @@ Priority: environment variables → defaults from render.yaml.
 Other services can GET /api/registry on startup to discover endpoints
 without hardcoding URLs. Environment variables always override the registry.
 """
+from chain.startup_log import errors as _startup_errors
 from fastapi import APIRouter
 from chain.config import settings
 
@@ -60,3 +61,10 @@ async def service_registry():
             "as environment variables to override this registry."
         ),
     }
+
+
+    @router.get("/startup-errors", tags=["Debug"])
+    async def startup_errors():
+      """Return router import errors captured at startup."""
+      return _startup_errors
+    
