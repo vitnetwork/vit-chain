@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from chain.config import settings
 from chain.database import init_db, AsyncSessionLocal
+from chain.startup_log import errors as _startup_errors, capture as _capture_error
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
@@ -110,48 +111,56 @@ try:
     from chain.rpc.router import router as rpc_router
     app.include_router(rpc_router)
 except Exception as _e:
+    _capture_error("rpc_router", _e)
     logger.error("Failed to load RPC router: %s", _e)
 
 try:
     from api.blocks import router as blocks_router
     app.include_router(blocks_router)
 except Exception as _e:
+    _capture_error("blocks_router", _e)
     logger.error("Failed to load blocks router: %s", _e)
 
 try:
     from api.transactions import router as txs_router
     app.include_router(txs_router)
 except Exception as _e:
+    _capture_error("txs_router", _e)
     logger.error("Failed to load transactions router: %s", _e)
 
 try:
     from api.accounts import router as accounts_router
     app.include_router(accounts_router)
 except Exception as _e:
+    _capture_error("accounts_router", _e)
     logger.error("Failed to load accounts router: %s", _e)
 
 try:
     from api.validators import router as validators_router
     app.include_router(validators_router)
 except Exception as _e:
+    _capture_error("validators_router", _e)
     logger.error("Failed to load validators router: %s", _e)
 
 try:
     from api.status import router as status_router
     app.include_router(status_router)
 except Exception as _e:
+    _capture_error("status_router", _e)
     logger.error("Failed to load status router: %s", _e)
 
 try:
     from api.peers import router as peers_router
     app.include_router(peers_router)
 except Exception as _e:
+    _capture_error("peers_router", _e)
     logger.error("Failed to load peers router: %s", _e)
 
 try:
     from api.registry import router as registry_router
     app.include_router(registry_router)
 except Exception as _e:
+    _capture_error("registry_router", _e)
     logger.error("Failed to load registry router: %s", _e)
 
 
