@@ -105,6 +105,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import traceback as _tb
+_startup_errors: dict = {}  # router import errors captured at startup
+
 # ââ Routers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 try:
     from chain.rpc.router import router as rpc_router
@@ -170,15 +173,22 @@ except Exception as _e:
       return _startup_errors
 
 
-    @app.get("/ping", tags=["Health"])
+
+@app.get("/debug/startup-errors", tags=["Debug"])
+async def debug_startup_errors():
+    """Exposes router import errors captured at startup."""
+    return _startup_errors
+
+
+@app.get("/ping", tags=["Health"])
 async def ping():
-    """Liveness probe â always 200, no DB dependency."""
-    return {
-        "status": "ok",
-        "chain_id": settings.CHAIN_ID,
-        "network":  settings.NETWORK,
-        "version":  settings.NODE_VERSION,
-    }
+"""Liveness probe â always 200, no DB dependency."""
+return {
+    "status": "ok",
+    "chain_id": settings.CHAIN_ID,
+    "network":  settings.NETWORK,
+    "version":  settings.NODE_VERSION,
+}
 
 
 @app.get("/health", tags=["Health"])
@@ -202,12 +212,12 @@ async def health():
     except Exception as exc:
         logger.debug("Health check DB error: %s", exc)
 
-    return {
-        "status":            "healthy" if db_ok else "degraded",
-        "network":           settings.NETWORK,
-        "chain_id":          settings.CHAIN_ID,
-        "version":           settings.NODE_VERSION,
+return {
+    "status":            "healthy" if db_ok else "degraded",
+    "network":           settings.NETWORK,
+    "chain_id":          settings.CHAIN_ID,
+    "version":           settings.NODE_VERSION,
         "db_connected":      db_ok,
         "block_height":      height,
         "active_validators": validator_count,
-    }
+}
