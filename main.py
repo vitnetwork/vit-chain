@@ -29,41 +29,59 @@ async def lifespan(app: FastAPI):
         settings.NODE_VERSION, settings.NETWORK, settings.CHAIN_ID,
     )
 
-    # 1. Initialise DB schema
-    await init_db()
-    logger.info("Database schema ready.")
-
-    # 2. Seed genesis block (idempotent)
+    # ── 1. Initialise DB schema ──────────────────────────────────────────────
+    # Wrapped so the service boots in DEGRADED mode even if the DB is
+    # temporarily unavailable. /ping always responds; /health reports state.
     try:
-        async with AsyncSessionLocal() as db:
-            genesis = await ensure_genesis(db)
-            await db.commit()
-            logger.info(
-                "Genesis verified: height=%d hash=%s…",
-                genesis.height, genesis.block_hash[:16],
-            )
+        await init_db()
+        logger.info("Database schema ready.")
+        app.state.db_ready = True
     except Exception as exc:
-        logger.error("Genesis seeding failed — chain may be empty: %s", exc)
+        logger.error(
+            "Database init failed — node starting in DEGRADED mode: %s", exc
+        )
+        app.state.db_ready = False
 
-    # 3. Start consensus epoch scheduler as a background task
-    from chain.consensus.scheduler import EpochScheduler
-    scheduler = EpochScheduler()
-    consensus_task = asyncio.create_task(scheduler.run(), name="consensus-scheduler")
-    app.state.scheduler = scheduler
-    app.state.consensus_task = consensus_task
-    logger.info("Consensus scheduler started (epoch=%ds).", settings.EPOCH_SECONDS)
+    # ── 2. Seed genesis block (idempotent) ───────────────────────────────────
+    if getattr(app.state, "db_ready", False):
+        try:
+            async with AsyncSessionLocal() as db:
+                genesis = await ensure_genesis(db)
+                await db.commit()
+                logger.info(
+                    "Genesis verified: height=%d hash=%s…",
+                    genesis.height, genesis.block_hash[:16],
+                )
+        except Exception as exc:
+            logger.error("Genesis seeding failed — chain may be empty: %s", exc)
+
+    # ── 3. Consensus epoch scheduler ─────────────────────────────────────────
+    app.state.consensus_task = None
+    try:
+        from chain.consensus.scheduler import EpochScheduler
+        scheduler = EpochScheduler()
+        consensus_task = asyncio.create_task(
+            scheduler.run(), name="consensus-scheduler"
+        )
+        app.state.scheduler = scheduler
+        app.state.consensus_task = consensus_task
+        logger.info("Consensus scheduler started (epoch=%ds).", settings.EPOCH_SECONDS)
+    except Exception as exc:
+        logger.error("Consensus scheduler failed to start: %s", exc)
 
     logger.info("VIT Chain Node OPERATIONAL — RPC at POST /rpc")
 
     yield
 
-    # Shutdown
+    # ── Shutdown ─────────────────────────────────────────────────────────────
     logger.info("Shutting down VIT Chain Node…")
-    consensus_task.cancel()
-    try:
-        await consensus_task
-    except asyncio.CancelledError:
-        pass
+    task = getattr(app.state, "consensus_task", None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     logger.info("VIT Chain Node stopped.")
 
 
@@ -88,31 +106,64 @@ app.add_middleware(
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-from chain.rpc.router import router as rpc_router
-from api.blocks import router as blocks_router
-from api.transactions import router as txs_router
-from api.accounts import router as accounts_router
-from api.validators import router as validators_router
-from api.status import router as status_router
-from api.peers import router as peers_router
+try:
+    from chain.rpc.router import router as rpc_router
+    app.include_router(rpc_router)
+except Exception as _e:
+    logger.error("Failed to load RPC router: %s", _e)
 
-app.include_router(rpc_router)
-app.include_router(blocks_router)
-app.include_router(txs_router)
-app.include_router(accounts_router)
-app.include_router(validators_router)
-app.include_router(status_router)
-app.include_router(peers_router)
+try:
+    from api.blocks import router as blocks_router
+    app.include_router(blocks_router)
+except Exception as _e:
+    logger.error("Failed to load blocks router: %s", _e)
+
+try:
+    from api.transactions import router as txs_router
+    app.include_router(txs_router)
+except Exception as _e:
+    logger.error("Failed to load transactions router: %s", _e)
+
+try:
+    from api.accounts import router as accounts_router
+    app.include_router(accounts_router)
+except Exception as _e:
+    logger.error("Failed to load accounts router: %s", _e)
+
+try:
+    from api.validators import router as validators_router
+    app.include_router(validators_router)
+except Exception as _e:
+    logger.error("Failed to load validators router: %s", _e)
+
+try:
+    from api.status import router as status_router
+    app.include_router(status_router)
+except Exception as _e:
+    logger.error("Failed to load status router: %s", _e)
+
+try:
+    from api.peers import router as peers_router
+    app.include_router(peers_router)
+except Exception as _e:
+    logger.error("Failed to load peers router: %s", _e)
 
 
 # ── Core endpoints ────────────────────────────────────────────────────────────
 @app.get("/ping", tags=["Health"])
 async def ping():
-    return {"status": "ok", "chain_id": settings.CHAIN_ID, "network": settings.NETWORK}
+    """Liveness probe — always 200, no DB dependency."""
+    return {
+        "status": "ok",
+        "chain_id": settings.CHAIN_ID,
+        "network":  settings.NETWORK,
+        "version":  settings.NODE_VERSION,
+    }
 
 
 @app.get("/health", tags=["Health"])
 async def health():
+    """Deep readiness check — reports DB connectivity and chain state."""
     from sqlalchemy import text
     db_ok = False
     height = 0
@@ -122,8 +173,8 @@ async def health():
             await db.execute(text("SELECT 1"))
             db_ok = True
             from chain.core.chain import VITChain
-            chain = VITChain()
-            height = await chain.get_height(db)
+            _chain = VITChain()
+            height = await _chain.get_height(db)
             from chain.consensus.registry import ValidatorRegistry
             reg = ValidatorRegistry()
             validators = await reg.get_active_validators(db)
@@ -132,11 +183,11 @@ async def health():
         logger.debug("Health check DB error: %s", exc)
 
     return {
-        "status": "healthy" if db_ok else "degraded",
-        "network": settings.NETWORK,
-        "chain_id": settings.CHAIN_ID,
-        "version": settings.NODE_VERSION,
-        "db_connected": db_ok,
-        "block_height": height,
+        "status":            "healthy" if db_ok else "degraded",
+        "network":           settings.NETWORK,
+        "chain_id":          settings.CHAIN_ID,
+        "version":           settings.NODE_VERSION,
+        "db_connected":      db_ok,
+        "block_height":      height,
         "active_validators": validator_count,
     }
