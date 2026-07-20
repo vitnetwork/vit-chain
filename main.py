@@ -6,7 +6,6 @@ Proof-of-Storage consensus, JSON-RPC 2.0, P2P gossip.
 import asyncio
 import logging
 import os
-import traceback as _tb
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -107,73 +106,57 @@ app.add_middleware(
 )
 
 # ââ Routers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-_startup_errors: dict = {}
-
 try:
     from chain.rpc.router import router as rpc_router
     app.include_router(rpc_router)
 except Exception as _e:
-    _startup_errors["rpc_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load RPC router: %s", _e)
 
 try:
     from api.blocks import router as blocks_router
     app.include_router(blocks_router)
 except Exception as _e:
-    _startup_errors["blocks_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load blocks router: %s", _e)
 
 try:
     from api.transactions import router as txs_router
     app.include_router(txs_router)
 except Exception as _e:
-    _startup_errors["txs_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load transactions router: %s", _e)
 
 try:
     from api.accounts import router as accounts_router
     app.include_router(accounts_router)
 except Exception as _e:
-    _startup_errors["accounts_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load accounts router: %s", _e)
 
 try:
     from api.validators import router as validators_router
     app.include_router(validators_router)
 except Exception as _e:
-    _startup_errors["validators_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load validators router: %s", _e)
 
 try:
     from api.status import router as status_router
     app.include_router(status_router)
 except Exception as _e:
-    _startup_errors["status_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load status router: %s", _e)
 
 try:
     from api.peers import router as peers_router
     app.include_router(peers_router)
 except Exception as _e:
-    _startup_errors["peers_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load peers router: %s", _e)
 
 try:
     from api.registry import router as registry_router
     app.include_router(registry_router)
 except Exception as _e:
-    _startup_errors["registry_router"] = {"error": str(_e), "type": type(_e).__name__, "tb": _tb.format_exc()}
     logger.error("Failed to load registry router: %s", _e)
 
 
 # ââ Core endpoints ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-@app.get("/debug/startup-errors", tags=["Debug"])
-    async def debug_startup_errors():
-      """Startup router import errors -- diagnostics only."""
-      return _startup_errors
-
-
-    @app.get("/ping", tags=["Health"])
+@app.get("/ping", tags=["Health"])
 async def ping():
     """Liveness probe â always 200, no DB dependency."""
     return {
