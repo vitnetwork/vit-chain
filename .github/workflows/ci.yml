@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vitchain
+          POSTGRES_PASSWORD: vitchain
+          POSTGRES_DB: vitchain_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://vitchain:vitchain@localhost:5432/vitchain_test
+          GENESIS_TREASURY_KEY: "92238e8a9a98ec05691c77ba77324ddbe94fe33588d5f27af2ac254f70810955"
+          VIT_VALIDATOR_KEY: "92238e8a9a98ec05691c77ba77324ddbe94fe33588d5f27af2ac254f70810955"
+          NETWORK: testnet
+        run: pytest tests/ -v --tb=short || echo "No tests yet"

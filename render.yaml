@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: vit-chain
+    runtime: docker
+    repo: https://github.com/vitnetwork/vit-chain
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    region: oregon
+    plan: free
+    envVars:
+      - key: NETWORK
+        value: testnet
+      - key: CHAIN_ID
+        value: "7764"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: VIT_VALIDATOR_KEY
+        sync: false
+      - key: GENESIS_TREASURY_KEY
+        sync: false
+      - key: GENESIS_VALIDATORS
+        sync: false
+      - key: GENESIS_PROPOSER_ADDRESS
+        sync: false
+      - key: SLASHING_DOWNTIME_SLOTS
+        value: "50"
+      - key: SLASHING_APPEAL_WINDOW_SLOTS
+        value: "100"
+      - key: VIT_STORAGE_URL
+        value: https://vit-storage-4trt.onrender.com
+      - key: VIT_AI_URL
+        value: https://vit-ai.onrender.com
