@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["Registry"])
 async def service_registry():
     """
     Returns all live VIT Network service endpoints.
-    
+
     Configuration priority per service:
     1. Environment variable (e.g. VIT_STORAGE_URL)
     2. This registry response
@@ -50,8 +50,8 @@ async def service_registry():
                 "status": "primary",
             },
             "vitnetwork": {
-                "url": "https://vitnetwork-nls4.onrender.com",
-                "health": "https://vitnetwork-nls4.onrender.com/health",
+                "url": settings.VIT_NETWORK_URL or "https://vitnetwork-nls4.onrender.com",
+                "health": f"{settings.VIT_NETWORK_URL or 'https://vitnetwork-nls4.onrender.com'}/health",
                 "env_var": "VIT_NETWORK_URL",
                 "status": "primary",
             },
@@ -61,10 +61,3 @@ async def service_registry():
             "as environment variables to override this registry."
         ),
     }
-
-
-    @router.get("/startup-errors", tags=["Debug"])
-    async def startup_errors():
-      """Return router import errors captured at startup."""
-      return _startup_errors
-    

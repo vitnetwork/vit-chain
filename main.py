@@ -1,5 +1,5 @@
 """
-VIT Chain Node â main.py
+VIT Chain Node — main.py
 Standalone FastAPI service for VIT Chain (Chain ID 7764).
 Proof-of-Storage consensus, JSON-RPC 2.0, P2P gossip.
 """
@@ -17,66 +17,89 @@ from chain.startup_log import errors as _startup_errors, capture as _capture_err
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s â %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 logger = logging.getLogger("vit-chain")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _boot() -> None:
+    """
+    Run all heavyweight startup work in a background task so uvicorn
+    binds the port and /ping is reachable immediately.
+
+    Render's health check fires as soon as the port is open.  If this
+    code ran synchronously inside lifespan (before yield), Render's
+    30-second health-check window would expire during DB init / genesis
+    crypto, causing update_failed on every deploy.
+    """
     logger.info(
-        "VIT Chain Node %s starting â network: %s, chain_id: %d",
+        "VIT Chain Node %s booting — network: %s, chain_id: %d",
         settings.NODE_VERSION, settings.NETWORK, settings.CHAIN_ID,
     )
 
-    # ââ 1. Initialise DB schema ââââââââââââââââââââââââââââââââââââââââââââââ
-    # Wrapped so the service boots in DEGRADED mode even if the DB is
-    # temporarily unavailable. /ping always responds; /health reports state.
+    # ── 1. Initialise DB schema ────────────────────────────────────────
     try:
         await init_db()
         logger.info("Database schema ready.")
-        app.state.db_ready = True
+        _boot.db_ready = True
     except Exception as exc:
-        logger.error(
-            "Database init failed â node starting in DEGRADED mode: %s", exc
-        )
-        app.state.db_ready = False
+        logger.error("Database init failed — node starting in DEGRADED mode: %s", exc)
+        _boot.db_ready = False
 
-    # ââ 2. Seed genesis block (idempotent) âââââââââââââââââââââââââââââââââââ
-    if getattr(app.state, "db_ready", False):
+    # ── 2. Seed genesis block (idempotent) ────────────────────────────
+    if getattr(_boot, "db_ready", False):
         try:
             from chain.genesis import ensure_genesis  # lazy — avoids import-time crypto crash
             async with AsyncSessionLocal() as db:
                 genesis = await ensure_genesis(db)
                 await db.commit()
                 logger.info(
-                    "Genesis verified: height=%d hash=%sâ¦",
+                    "Genesis verified: height=%d hash=%s…",
                     genesis.height, genesis.block_hash[:16],
                 )
         except Exception as exc:
-            logger.error("Genesis seeding failed â chain may be empty: %s", exc)
+            logger.error("Genesis seeding failed — chain may be empty: %s", exc)
 
-    # ââ 3. Consensus epoch scheduler âââââââââââââââââââââââââââââââââââââââââ
-    app.state.consensus_task = None
+    # ── 3. Consensus epoch scheduler ─────────────────────────────────
     try:
         from chain.consensus.scheduler import EpochScheduler
         scheduler = EpochScheduler()
         consensus_task = asyncio.create_task(
             scheduler.run(), name="consensus-scheduler"
         )
-        app.state.scheduler = scheduler
-        app.state.consensus_task = consensus_task
+        _boot.scheduler = scheduler
+        _boot.consensus_task = consensus_task
         logger.info("Consensus scheduler started (epoch=%ds).", settings.EPOCH_SECONDS)
     except Exception as exc:
         logger.error("Consensus scheduler failed to start: %s", exc)
 
-    logger.info("VIT Chain Node OPERATIONAL â RPC at POST /rpc")
+    logger.info("VIT Chain Node OPERATIONAL — RPC at POST /rpc")
 
-    yield
 
-    # ââ Shutdown âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    logger.info("Shutting down VIT Chain Nodeâ¦")
-    task = getattr(app.state, "consensus_task", None)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start all heavyweight init in the background — /ping is reachable immediately.
+    # This prevents Render's 30-second health check from timing out during DB/genesis boot.
+    boot_task = asyncio.create_task(_boot(), name="vit-chain-boot")
+
+    # Propagate boot state to app.state once the task finishes (non-blocking for requests)
+    async def _propagate_state():
+        try:
+            await boot_task
+        except Exception as exc:
+            logger.error("Boot task failed: %s", exc)
+        app.state.db_ready = getattr(_boot, "db_ready", False)
+        app.state.scheduler = getattr(_boot, "scheduler", None)
+        app.state.consensus_task = getattr(_boot, "consensus_task", None)
+
+    asyncio.create_task(_propagate_state(), name="propagate-boot-state")
+
+    yield  # ← uvicorn serves /ping immediately; boot continues in background
+
+    # ── Shutdown ──────────────────────────────────────────────────────
+    logger.info("Shutting down VIT Chain Node…")
+    boot_task.cancel()
+    task = getattr(app.state, "consensus_task", None) or getattr(_boot, "consensus_task", None)
     if task and not task.done():
         task.cancel()
         try:
@@ -89,7 +112,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="VIT Chain Node",
     description=(
-        f"VIT Network â Chain ID {settings.CHAIN_ID} ({settings.NETWORK}). "
+        f"VIT Network — Chain ID {settings.CHAIN_ID} ({settings.NETWORK}). "
         "Proof-of-Storage consensus. JSON-RPC 2.0 compatible."
     ),
     version=settings.NODE_VERSION,
@@ -106,7 +129,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ââ Routers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ── Routers ───────────────────────────────────────────────────────────────────
 try:
     from chain.rpc.router import router as rpc_router
     app.include_router(rpc_router)
@@ -125,7 +148,7 @@ try:
     from api.transactions import router as txs_router
     app.include_router(txs_router)
 except Exception as _e:
-    _capture_error("txs_router", _e)
+    _capture_error("transactions_router", _e)
     logger.error("Failed to load transactions router: %s", _e)
 
 try:
@@ -164,10 +187,10 @@ except Exception as _e:
     logger.error("Failed to load registry router: %s", _e)
 
 
-# ââ Core endpoints ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ── Core endpoints ────────────────────────────────────────────────────────────
 @app.get("/ping", tags=["Health"])
 async def ping():
-    """Liveness probe â always 200, no DB dependency."""
+    """Liveness probe — always 200, no DB dependency."""
     return {
         "status": "ok",
         "chain_id": settings.CHAIN_ID,
@@ -178,7 +201,7 @@ async def ping():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    """Deep readiness check â reports DB connectivity and chain state."""
+    """Deep readiness check — reports DB connectivity and chain state."""
     from sqlalchemy import text
     db_ok = False
     height = 0
@@ -197,8 +220,9 @@ async def health():
     except Exception as exc:
         logger.debug("Health check DB error: %s", exc)
 
+    boot_done = getattr(_boot, "db_ready", None) is not None
     return {
-        "status":            "healthy" if db_ok else "degraded",
+        "status":            "healthy" if db_ok else ("booting" if not boot_done else "degraded"),
         "network":           settings.NETWORK,
         "chain_id":          settings.CHAIN_ID,
         "version":           settings.NODE_VERSION,
@@ -206,3 +230,9 @@ async def health():
         "block_height":      height,
         "active_validators": validator_count,
     }
+
+
+@app.get("/api/startup-errors", tags=["Debug"])
+async def startup_errors():
+    """Return router import errors captured at startup."""
+    return _startup_errors
