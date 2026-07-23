@@ -27,8 +27,17 @@ class BlockProducer:
         if not validator_key:
             validator_key = settings.GENESIS_TREASURY_KEY.strip()
         if not validator_key:
-            logger.warning("[producer] No validator key — cannot produce block.")
-            return False
+            if settings.NETWORK == "mainnet":
+                logger.warning("[producer] No validator key on mainnet — cannot produce block.")
+                return False
+            import hashlib
+            validator_key = hashlib.sha256(
+                f"vit-{settings.NETWORK}-validator-1-{settings.CHAIN_ID}".encode()
+            ).hexdigest()
+            logger.warning(
+                "[producer] VIT_VALIDATOR_KEY not set — using auto-generated deterministic key "
+                "(testnet only). Set this env var for a stable validator identity."
+            )
 
         latest = await self._chain.get_latest_block(db)
         height = (latest.height + 1) if latest else 0
