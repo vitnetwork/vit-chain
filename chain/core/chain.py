@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 
 from chain.models import ChainBlock, ChainTransaction
-from chain.core.block import VITBlock, VITTransaction, validate_block
+from chain.core.block import VITBlock, validate_block
+from chain.core.transaction import VITTransaction
 from chain.core.state import ChainState
 
 logger = logging.getLogger(__name__)

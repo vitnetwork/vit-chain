@@ -34,6 +34,7 @@ class ChainBlock(Base):
     __table_args__ = (
         Index("ix_chain_blocks_timestamp", "timestamp"),
         Index("ix_chain_blocks_validator", "validator_id"),
+        {"extend_existing": True},
     )
 
 
@@ -57,12 +58,14 @@ class ChainTransaction(Base):
     __table_args__ = (
         Index("ix_chain_txs_from", "from_address"),
         Index("ix_chain_txs_to", "to_address"),
+        {"extend_existing": True},
     )
 
 
 # ── Chain Accounts ────────────────────────────────────────────────────────────
 class ChainAccount(Base):
     __tablename__ = "chain_accounts"
+    __table_args__ = {"extend_existing": True}
 
     address           = Column(String(128), primary_key=True)
     balance           = Column(Numeric(36, 18), default=Decimal("0"))
@@ -76,6 +79,7 @@ class ChainAccount(Base):
 # ── Validators ────────────────────────────────────────────────────────────────
 class Validator(Base):
     __tablename__ = "chain_validators"
+    __table_args__ = {"extend_existing": True}
 
     node_id        = Column(String(256), primary_key=True)   # did:vit:<address>
     address        = Column(String(128), unique=True, index=True, nullable=False)
@@ -90,6 +94,7 @@ class Validator(Base):
 
 class ValidatorReputation(Base):
     __tablename__ = "chain_validator_reputation"
+    __table_args__ = {"extend_existing": True}
 
     node_id          = Column(String(256), ForeignKey("chain_validators.node_id"), primary_key=True)
     blocks_produced  = Column(Integer, default=0)
@@ -103,6 +108,7 @@ class ValidatorReputation(Base):
 # ── Slashing Records ──────────────────────────────────────────────────────────
 class SlashRecord(Base):
     __tablename__ = "chain_slash_records"
+    __table_args__ = {"extend_existing": True}
 
     id                = Column(Integer, primary_key=True, autoincrement=True)
     validator_address = Column(String(128), index=True, nullable=False)
@@ -120,6 +126,7 @@ class SlashRecord(Base):
 # ── Storage Challenges ────────────────────────────────────────────────────────
 class StorageChallenge(Base):
     __tablename__ = "chain_storage_challenges"
+    __table_args__ = {"extend_existing": True}
 
     challenge_id      = Column(String(128), primary_key=True)
     epoch             = Column(Integer, index=True, nullable=False)
@@ -135,6 +142,7 @@ class StorageChallenge(Base):
 # ── P2P Peers ─────────────────────────────────────────────────────────────────
 class PeerNode(Base):
     __tablename__ = "chain_peers"
+    __table_args__ = {"extend_existing": True}
 
     node_id   = Column(String(256), primary_key=True)
     ws_url    = Column(String(512), nullable=True)
@@ -147,6 +155,7 @@ class PeerNode(Base):
 # ── Consensus Checkpoints ─────────────────────────────────────────────────────
 class ConsensusCheckpoint(Base):
     __tablename__ = "chain_consensus_checkpoints"
+    __table_args__ = {"extend_existing": True}
 
     epoch       = Column(Integer, primary_key=True)
     block_hash  = Column(String(128), nullable=False)
