@@ -22,7 +22,7 @@ class ChainBlock(Base):
     state_root       = Column(String(128), nullable=True)
     timestamp        = Column(Integer, index=True, nullable=False)
     validator_id     = Column(String(128), index=True, nullable=False)
-    validator_sig    = Column(Text, nullable=True)
+    validator_signature = Column(Text, nullable=True)
     tx_count         = Column(Integer, default=0)
     total_fees       = Column(Numeric(36, 18), default=Decimal("0"))
     block_reward     = Column(Numeric(36, 18), default=Decimal("0"))
