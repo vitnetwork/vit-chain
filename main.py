@@ -261,16 +261,55 @@ async def sync_validators():
 
 @app.post("/api/genesis/seed", tags=["Debug"])
 async def seed_genesis():
-    """Force genesis seeding — idempotent, safe to call multiple times."""
+    """Force genesis seeding with detailed validation diagnostics."""
     import traceback
+    from chain.genesis import build_genesis_block
+    from chain.core.block import validate_block
+    from chain.core.chain import VITChain
+    from chain.crypto.ecdsa import recover_public_key
+    from chain.crypto.address import public_key_to_address
+
+    diag: dict = {}
     try:
-        from chain.genesis import ensure_genesis
-        async with AsyncSessionLocal() as db:
-            block = await ensure_genesis(db)
-            await db.commit()
-        return {"status": "ok", "genesis_hash": block.block_hash, "height": block.height}
+        # Build genesis block and diagnose validate_block step by step
+        block = build_genesis_block()
+        diag["block_height"] = block.height
+        diag["block_hash"] = block.block_hash
+        diag["prev_hash"] = block.prev_hash
+        diag["validator_id"] = block.validator_id
+        diag["validator_signature"] = block.validator_signature[:20] if block.validator_signature else None
+
+        # Re-compute hash to check determinism
+        computed = block.compute_hash()
+        diag["computed_hash"] = computed
+        diag["hash_match"] = block.block_hash == computed
+
+        # Check signature
+        if block.validator_signature:
+            try:
+                pub = recover_public_key(bytes.fromhex(block.block_hash), block.validator_signature)
+                diag["sig_recovered_pub"] = pub.hex()[:20] if pub else None
+                if pub:
+                    recovered_addr = public_key_to_address(pub)
+                    diag["sig_recovered_addr"] = recovered_addr
+                    diag["sig_addr_match"] = recovered_addr == block.validator_id
+            except Exception as exc:
+                diag["sig_error"] = str(exc)
+
+        # Try actual add_block
+        try:
+            from chain.genesis import ensure_genesis
+            async with AsyncSessionLocal() as db:
+                result = await ensure_genesis(db)
+                await db.commit()
+            diag["genesis_result"] = {"status": "ok", "hash": result.block_hash}
+        except Exception as exc:
+            diag["genesis_error"] = {"error": str(exc), "traceback": traceback.format_exc()}
+
     except Exception as exc:
-        return {"status": "error", "error": str(exc), "traceback": traceback.format_exc()}
+        diag["outer_error"] = {"error": str(exc), "traceback": traceback.format_exc()}
+
+    return diag
 
 
 @app.get("/api/debug/blocks", tags=["Debug"])
