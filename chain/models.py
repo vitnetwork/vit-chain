@@ -144,12 +144,12 @@ class PeerNode(Base):
     __tablename__ = "chain_peers"
     __table_args__ = {"extend_existing": True}
 
-    node_id   = Column(String(256), primary_key=True)
-    ws_url    = Column(String(512), nullable=True)
-    http_url  = Column(String(512), nullable=True)
-    status    = Column(String(20), default="active", index=True)  # active|disconnected|banned
-    last_seen = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    metadata  = Column(JSON, default=dict)
+    node_id      = Column(String(256), primary_key=True)
+    ws_url       = Column(String(512), nullable=True)
+    http_url     = Column(String(512), nullable=True)
+    status       = Column(String(20), default="active", index=True)  # active|disconnected|banned
+    last_seen    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    peer_metadata = Column("metadata", JSON, default=dict)  # 'metadata' reserved in Declarative API
 
 
 # ── Consensus Checkpoints ─────────────────────────────────────────────────────

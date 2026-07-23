@@ -26,7 +26,7 @@ class PeerRegistry:
             peer.last_seen = datetime.now(timezone.utc)
         else:
             peer = PeerNode(node_id=node_id, ws_url=ws_url, http_url=http_url,
-                            status="active", metadata=metadata or {})
+                            status="active", peer_metadata=metadata or {})
             db.add(peer)
         await db.flush()
         return peer
