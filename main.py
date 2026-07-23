@@ -257,3 +257,49 @@ async def sync_validators():
         return {"status": "ok", "active_validators": len(validators)}
     except Exception as exc:
         return {"status": "error", "error": str(exc), "traceback": traceback.format_exc()}
+
+
+@app.post("/api/genesis/seed", tags=["Debug"])
+async def seed_genesis():
+    """Force genesis seeding — idempotent, safe to call multiple times."""
+    import traceback
+    try:
+        from chain.genesis import ensure_genesis
+        async with AsyncSessionLocal() as db:
+            block = await ensure_genesis(db)
+            await db.commit()
+        return {"status": "ok", "genesis_hash": block.block_hash, "height": block.height}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "traceback": traceback.format_exc()}
+
+
+@app.get("/api/debug/blocks", tags=["Debug"])
+async def debug_blocks():
+    """Try the chain_blocks queries and return any exception details."""
+    import traceback
+    from sqlalchemy import text
+    results = {}
+    try:
+        async with AsyncSessionLocal() as db:
+            # Raw SQL — bypasses ORM mapping
+            r = await db.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='chain_blocks' ORDER BY ordinal_position"))
+            results["chain_blocks_columns"] = [row[0] for row in r.fetchall()]
+    except Exception as exc:
+        results["columns_error"] = str(exc)
+    try:
+        async with AsyncSessionLocal() as db:
+            from chain.core.chain import VITChain
+            c = VITChain()
+            h = await c.get_height(db)
+            results["get_height"] = h
+    except Exception as exc:
+        results["get_height_error"] = {"error": str(exc), "traceback": traceback.format_exc()}
+    try:
+        async with AsyncSessionLocal() as db:
+            from chain.core.chain import VITChain
+            c = VITChain()
+            blocks = await c.get_blocks(db, limit=5, offset=0)
+            results["get_blocks"] = len(blocks)
+    except Exception as exc:
+        results["get_blocks_error"] = {"error": str(exc), "traceback": traceback.format_exc()}
+    return results
