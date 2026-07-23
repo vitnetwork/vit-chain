@@ -236,3 +236,24 @@ async def health():
 async def startup_errors():
     """Return router import errors captured at startup."""
     return _startup_errors
+
+
+@app.post("/api/validators/sync", tags=["Debug"])
+async def sync_validators():
+    """
+    Explicitly run validator registration — useful when genesis exists but
+    active_validators = 0.  Returns the outcome or the exact error message.
+    """
+    import traceback
+    try:
+        from chain.genesis import _ensure_validators_registered
+        async with AsyncSessionLocal() as db:
+            await _ensure_validators_registered(db)
+            await db.commit()
+        from chain.consensus.registry import ValidatorRegistry
+        async with AsyncSessionLocal() as db2:
+            reg = ValidatorRegistry()
+            validators = await reg.get_active_validators(db2)
+        return {"status": "ok", "active_validators": len(validators)}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "traceback": traceback.format_exc()}

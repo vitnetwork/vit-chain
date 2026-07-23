@@ -161,6 +161,7 @@ async def _ensure_validators_registered(db: AsyncSession) -> None:
     Called on every boot so a node that lost its validator state recovers
     automatically — without recreating the genesis block.
     """
+    import traceback
     from chain.consensus.registry import ValidatorRegistry
 
     registry = ValidatorRegistry()
@@ -176,7 +177,15 @@ async def _ensure_validators_registered(db: AsyncSession) -> None:
         "[genesis] Genesis exists but no active validators found — "
         "re-registering from env / auto-generated keys."
     )
-    await _register_genesis_validators(db)
+    try:
+        await _register_genesis_validators(db)
+    except Exception as exc:
+        tb = traceback.format_exc()
+        logger.error("[genesis] Validator registration FAILED: %s\n%s", exc, tb)
+        # Store error so it's visible via /api/startup-errors
+        from chain.startup_log import capture as _cap
+        _cap("validator_registration", exc)
+        raise
 
 
 async def _register_genesis_validators(db: AsyncSession) -> None:
