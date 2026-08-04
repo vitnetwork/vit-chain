@@ -186,6 +186,13 @@ except Exception as _e:
     _capture_error("registry_router", _e)
     logger.error("Failed to load registry router: %s", _e)
 
+try:
+    from api.challenges import router as challenges_router
+    app.include_router(challenges_router)
+except Exception as _e:
+    _capture_error("challenges_router", _e)
+    logger.error("Failed to load challenges router: %s", _e)
+
 
 # ── Core endpoints ────────────────────────────────────────────────────────────
 @app.get("/ping", tags=["Health"])
