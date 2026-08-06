@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from chain.config import settings
 from chain.database import init_db, AsyncSessionLocal
@@ -228,8 +229,21 @@ async def health():
         logger.debug("Health check DB error: %s", exc)
 
     boot_done = getattr(_boot, "db_ready", None) is not None
+    if not boot_done:
+        # Service is still warming up — return structured warmup response so
+        # callers know to retry rather than treating this as a hard failure.
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status":      "warming",
+                "retry_after": 15,
+                "network":     settings.NETWORK,
+                "chain_id":    settings.CHAIN_ID,
+                "version":     settings.NODE_VERSION,
+            },
+        )
     return {
-        "status":            "healthy" if db_ok else ("booting" if not boot_done else "degraded"),
+        "status":            "healthy" if db_ok else "degraded",
         "network":           settings.NETWORK,
         "chain_id":          settings.CHAIN_ID,
         "version":           settings.NODE_VERSION,
