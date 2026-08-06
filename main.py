@@ -242,14 +242,30 @@ async def health():
                 "version":     settings.NODE_VERSION,
             },
         )
+    # ── Redis status (Phase 4 — distinguish healthy/degraded/unavailable) ──
+    redis_status = "unavailable"
+    if settings.REDIS_URL:
+        from chain.cache import _get_redis
+        r = _get_redis()
+        if r:
+            try:
+                await r.ping()
+                redis_status = "healthy"
+            except Exception:
+                redis_status = "degraded"
+        else:
+            redis_status = "degraded"
+
+    overall = "healthy" if db_ok else "degraded"
     return {
-        "status":            "healthy" if db_ok else "degraded",
+        "status":            overall,
         "network":           settings.NETWORK,
         "chain_id":          settings.CHAIN_ID,
         "version":           settings.NODE_VERSION,
         "db_connected":      db_ok,
         "block_height":      height,
         "active_validators": validator_count,
+        "redis":             redis_status,
     }
 
 

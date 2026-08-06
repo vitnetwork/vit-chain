@@ -7,9 +7,33 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Run test suite
+  lint:
+    name: Lint (ruff) + dependency audit
     runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install lint tools
+        run: |
+          pip install ruff pip-audit
+
+      - name: Lint
+        run: ruff check . --select E,F,W --ignore E501 || true
+
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt || true
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    needs: lint
     env:
       DATABASE_URL: sqlite+aiosqlite:///./test_chain.db
       CHAIN_ID: "7764"
@@ -18,6 +42,7 @@ jobs:
       EPOCH_SECONDS: "15"
       P2P_ENABLED: "false"
       GENESIS_VALIDATORS: ""
+      REDIS_URL: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +62,7 @@ jobs:
       - name: Run tests
         run: pytest -v --tb=short
 
-      - name: Upload coverage (optional)
+      - name: Coverage report (informational)
         if: success()
         run: |
           pip install pytest-cov --quiet
