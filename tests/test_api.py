@@ -5,6 +5,7 @@ Exercises the FastAPI endpoints using TestClient with an in-memory SQLite
 database so no external services are required.
 """
 import os
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,12 @@ os.environ.setdefault("P2P_ENABLED",   "false")
 os.environ.setdefault("GENESIS_VALIDATORS", "")
 
 from main import app  # noqa: E402
+from chain.database import init_db  # noqa: E402
+
+# TestClient is created without a context manager below, so the application's
+# background lifespan boot does not initialize the SQLite schema before the
+# first request. Initialize the test-only schema explicitly.
+asyncio.run(init_db())
 
 client = TestClient(app)
 
