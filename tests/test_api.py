@@ -182,6 +182,9 @@ class TestStatusAndPeers:
     def test_registry(self):
         r = client.get("/api/registry")
         assert r.status_code == 200
+        data = r.json()
+        assert data["services"]["vitnetwork"]["url"]
+        assert data["services"]["vitnetwork"]["health"].endswith("/health")
 
 
 class TestChallengeEndpoints:
