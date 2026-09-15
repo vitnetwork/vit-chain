@@ -68,6 +68,7 @@ class _Settings:
     # ── Cross-service URLs ────────────────────────────────────────────────────
     VIT_STORAGE_URL: str = _env("VIT_STORAGE_URL", "")
     VIT_AI_URL: str = _env("VIT_AI_URL", "")
+    VIT_NETWORK_URL: str = _env("VIT_NETWORK_URL", "")
 
     def genesis_validators(self) -> list[dict]:
         """Parse GENESIS_VALIDATORS env into list of {address, stake, name}."""
