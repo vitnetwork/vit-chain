@@ -167,6 +167,13 @@ except Exception as _e:
     logger.error("Failed to load validators router: %s", _e)
 
 try:
+    from api.supply import router as supply_router
+    app.include_router(supply_router)
+except Exception as _e:
+    _capture_error("supply_router", _e)
+    logger.error("Failed to load supply router: %s", _e)
+
+try:
     from api.status import router as status_router
     app.include_router(status_router)
 except Exception as _e:
@@ -204,6 +211,17 @@ async def ping():
         "chain_id": settings.CHAIN_ID,
         "network":  settings.NETWORK,
         "version":  settings.NODE_VERSION,
+    }
+
+
+@app.get("/version", tags=["Health"])
+async def version():
+    """Expose the node version and chain metadata expected by clients."""
+    return {
+        "version": settings.NODE_VERSION,
+        "chain_id": settings.CHAIN_ID,
+        "network": settings.NETWORK,
+        "status": "ok",
     }
 
 

@@ -68,6 +68,7 @@ class TestHealthEndpoints:
             ("/api/blocks", "GET"),
             ("/api/transactions", "GET"),
             ("/api/validators", "GET"),
+            ("/api/supply", "GET"),
         ]
         
         for path, method in endpoints:

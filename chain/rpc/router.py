@@ -32,3 +32,46 @@ async def rpc_health():
         "name": "VIT Chain",
         "jsonrpc": "2.0",
     }
+
+
+@router.get("/rpc/health")
+async def rpc_health_detail():
+    """Compatibility health endpoint used by wallet tooling."""
+    return {
+        "status": "ok",
+        "chain_id": settings.CHAIN_ID,
+        "network": settings.NETWORK,
+        "name": "VIT Chain",
+    }
+
+
+@router.post("/api/chain/rpc")
+async def rpc_endpoint_compat(request: Request, db: AsyncSession = Depends(get_db)):
+    """Backward-compatible chain RPC alias used by gateway clients."""
+    body = await request.json()
+    if isinstance(body, list):
+        return await rpc_server.handle_batch(body, db)
+    return await rpc_server.handle(body, db)
+
+
+@router.get("/api/chain/rpc")
+async def rpc_health_compat():
+    """Backward-compatible chain RPC health alias."""
+    return {
+        "status": "ok",
+        "chain_id": settings.CHAIN_ID,
+        "network": settings.NETWORK,
+        "name": "VIT Chain",
+        "jsonrpc": "2.0",
+    }
+
+
+@router.get("/api/chain/rpc/health")
+async def rpc_health_compat_detail():
+    """Health detail alias used by chain clients and monitoring."""
+    return {
+        "status": "ok",
+        "chain_id": settings.CHAIN_ID,
+        "network": settings.NETWORK,
+        "name": "VIT Chain",
+    }

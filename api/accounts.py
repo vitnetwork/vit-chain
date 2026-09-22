@@ -15,15 +15,7 @@ async def get_account(address: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ChainAccount).where(ChainAccount.address == address))
     account = result.scalar_one_or_none()
     if not account:
-        # Return zero-balance account (EVM behaviour)
-        return {
-            "address": address,
-            "balance": "0",
-            "staked": "0",
-            "nonce": 0,
-            "first_seen_height": None,
-            "last_active_height": None,
-        }
+        raise HTTPException(status_code=404, detail=f"Account {address} not found")
     return {
         "address": account.address,
         "balance": str(account.balance),

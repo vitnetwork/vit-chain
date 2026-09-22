@@ -31,11 +31,7 @@ class ChainBlock(Base):
     raw_data         = Column(JSON, nullable=True)
     created_at       = Column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (
-        Index("ix_chain_blocks_timestamp", "timestamp"),
-        Index("ix_chain_blocks_validator", "validator_id"),
-        {"extend_existing": True},
-    )
+    __table_args__ = ({"extend_existing": True},)
 
 
 # ── Chain Transactions ────────────────────────────────────────────────────────
