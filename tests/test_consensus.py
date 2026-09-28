@@ -5,6 +5,7 @@ Tests are designed to be fast and self-contained (no DB required).
 """
 import pytest
 from decimal import Decimal
+from unittest.mock import AsyncMock, Mock
 
 
 class TestSlashingManager:
@@ -32,16 +33,22 @@ class TestRewardsCalculator:
     def test_calculate_returns_decimal(self):
         from chain.consensus.rewards import StorageRewardCalculator
         calc = StorageRewardCalculator()
-        # Should accept stake and proofs and return a Decimal
-        result = calc.calculate(stake=Decimal("1000000"), proofs_submitted=10, proofs_required=10)
+        result = calc.calculate(consensus_weight=1.0, num_validators=1)
         assert isinstance(result, Decimal)
         assert result >= Decimal("0")
 
     def test_zero_proofs_gives_no_reward(self):
         from chain.consensus.rewards import StorageRewardCalculator
         calc = StorageRewardCalculator()
-        result = calc.calculate(stake=Decimal("1000000"), proofs_submitted=0, proofs_required=10)
+        result = calc.calculate(consensus_weight=0.0, num_validators=1)
         assert result == Decimal("0")
+
+    def test_reward_is_split_between_validators(self):
+        from chain.consensus.rewards import StorageRewardCalculator
+        calc = StorageRewardCalculator()
+        single_validator = calc.calculate(consensus_weight=1.0, num_validators=1)
+        two_validators = calc.calculate(consensus_weight=1.0, num_validators=2)
+        assert two_validators == single_validator / 2
 
 
 class TestReputationManager:
@@ -57,16 +64,24 @@ class TestChallengeGenerator:
         gen = ChallengeGenerator()
         assert gen is not None
 
-    def test_generate_returns_dict(self):
+    @pytest.mark.asyncio
+    async def test_generate_epoch_challenges_persists_one_per_active_validator(self):
         from chain.consensus.challenge import ChallengeGenerator
         gen = ChallengeGenerator()
-        challenge = gen.generate(
-            epoch=1,
-            validator_address="0x" + "ab" * 20,
-            shard_id="shard_001",
-        )
-        assert isinstance(challenge, dict)
-        assert "challenge_id" in challenge or "id" in challenge or len(challenge) > 0
+        validator = Mock(address="0x" + "ab" * 20)
+        result = Mock()
+        result.scalars.return_value.all.return_value = [validator]
+        db = Mock()
+        db.execute = AsyncMock(return_value=result)
+        db.flush = AsyncMock()
+
+        challenge_ids = await gen.generate_epoch_challenges(db, epoch=1)
+
+        assert len(challenge_ids) == 1
+        challenge = db.add.call_args.args[0]
+        assert challenge.challenge_id == challenge_ids[0]
+        assert challenge.validator_address == validator.address
+        db.flush.assert_awaited_once()
 
 
 class TestConfig:

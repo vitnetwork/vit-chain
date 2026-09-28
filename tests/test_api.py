@@ -66,7 +66,8 @@ class TestHealthEndpoints:
             ("/rpc/health", "GET"),
             ("/api/chain/rpc/health", "GET"),
             ("/api/blocks", "GET"),
-            ("/api/transactions", "GET"),
+            ("/api/txs", "GET"),
+            ("/api/metrics", "GET"),
             ("/api/validators", "GET"),
             ("/api/supply", "GET"),
         ]
@@ -153,6 +154,14 @@ class TestValidatorEndpoints:
 
 
 class TestTransactionEndpoints:
+    def test_list_transactions(self):
+        r = client.get("/api/txs?limit=5&offset=0")
+        assert r.status_code == 200
+        data = r.json()
+        assert set(data) == {"transactions", "total", "limit", "offset"}
+        assert isinstance(data["transactions"], list)
+        assert data["limit"] == 5
+
     def test_get_tx_not_found(self):
         r = client.get("/api/txs/0x" + "ff" * 32)
         assert r.status_code == 404
@@ -182,6 +191,14 @@ class TestStatusAndPeers:
         assert r.status_code == 200
         data = r.json()
         assert "chain_id" in data or "network" in data
+
+    def test_metrics(self):
+        r = client.get("/api/metrics")
+        assert r.status_code == 200
+        data = r.json()
+        assert {"height", "tps", "total_transactions", "active_validators"} <= set(data)
+        assert data["total_transactions"] >= 0
+        assert data["active_validators"] >= 0
 
     def test_peers(self):
         r = client.get("/api/peers")
