@@ -35,7 +35,10 @@ POST /rpc          — JSON-RPC 2.0 (MetaMask compatible)
 GET  /health       — Node health + chain height
 GET  /status       — Full chain status
 GET  /api/blocks   — Block explorer API
-GET  /api/txs      — Transaction lookup
+GET  /api/txs?limit=20&offset=0 — Paginated recent transaction reads
+GET  /api/txs/{tx_hash} — Transaction lookup
+GET  /api/metrics  — Persisted chain metrics for the explorer
+POST /api/txs      — Submit a signed transaction
 GET  /api/accounts — Account balances
 GET  /api/validators — Validator set + reputation
 WS   /api/peer     — P2P gossip WebSocket
